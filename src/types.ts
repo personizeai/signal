@@ -203,6 +203,8 @@ export interface DigestResult {
     email: string;
     itemsCompiled: number;
     delivery?: DeliveryResult;
+    /** Whether delivery actually succeeded (false = compiled but channel rejected) */
+    delivered?: boolean;
     sdkCallsUsed: number;
     durationMs: number;
 }

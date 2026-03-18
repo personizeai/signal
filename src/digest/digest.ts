@@ -130,23 +130,31 @@ Respond with:
             );
         }
 
-        // 5. Memorize that digest was sent
+        const delivered = delivery?.success !== false;
+
+        // 5. Memorize digest outcome
+        const status = delivered ? 'compiled and sent' : `compiled but delivery failed (${delivery?.error || 'unknown'})`;
         (this.client.memory.memorize as any)({
             type: 'Contact',
-            memories: [{ text: `[SIGNAL:DIGEST] Digest compiled and sent on ${new Date().toISOString()}. ` +
+            memories: [{ text: `[SIGNAL:DIGEST] Digest ${status} on ${new Date().toISOString()}. ` +
                 `Items compiled: ${deferredItems.length}. Subject: ${subject}. ` +
                 `Content summary: ${body.substring(0, 200)}` }],
             email,
             enhanced: true,
-            tags: ['signal:sent', 'signal:digest', 'channel:digest'],
+            tags: ['signal:digest', 'channel:digest', ...(delivered ? ['signal:sent'] : ['signal:failed'])],
             speaker: 'System: Signal Digest',
             timestamp: new Date().toISOString(),
         }).catch(() => {}); // fire-and-forget
+
+        if (!delivered) {
+            console.warn(`[DigestBuilder] Digest delivery failed for ${email}:`, delivery?.error);
+        }
 
         return {
             email,
             itemsCompiled: deferredItems.length,
             delivery,
+            delivered,
             sdkCallsUsed,
             durationMs: Date.now() - startTime,
         };
@@ -161,7 +169,7 @@ Respond with:
      *
      * Returns null if the user has no behavioral context yet (nothing to surface).
      *
-     * Cost: 3 SDK calls + ~5K–8K tokens per user (vs ~12K for per-event evaluation).
+     * Uses 3 SDK calls per user.
      */
     async buildBehavioralDigest(email: string, options?: {
         tokenBudget?: number;
@@ -244,21 +252,29 @@ Respond with:
             );
         }
 
-        // 5. Memorize that behavioral digest was sent
+        const delivered = delivery?.success !== false;
+
+        // 5. Memorize digest outcome
+        const status = delivered ? 'Sent' : `Failed (${delivery?.error || 'unknown'})`;
         (this.client.memory.memorize as any)({
             type: 'Contact',
-            memories: [{ text: `[SIGNAL:BEHAVIORAL-DIGEST] Sent on ${new Date().toISOString()}. Subject: ${subject}.` }],
+            memories: [{ text: `[SIGNAL:BEHAVIORAL-DIGEST] ${status} on ${new Date().toISOString()}. Subject: ${subject}.` }],
             email,
             enhanced: false,
-            tags: ['signal:sent', 'signal:digest', 'signal:behavioral-digest'],
+            tags: ['signal:digest', 'signal:behavioral-digest', ...(delivered ? ['signal:sent'] : ['signal:failed'])],
             speaker: 'System: Signal Digest',
             timestamp: new Date().toISOString(),
         }).catch(() => {});
+
+        if (!delivered) {
+            console.warn(`[DigestBuilder] Behavioral digest delivery failed for ${email}:`, delivery?.error);
+        }
 
         return {
             email,
             itemsCompiled: 1,
             delivery,
+            delivered,
             sdkCallsUsed,
             durationMs: Date.now() - startTime,
         };
@@ -284,7 +300,12 @@ Respond with:
                 const result = await this.buildBehavioralDigest(email, options);
                 if (result) {
                     results.push(result);
-                    sent++;
+                    if (result.delivered === false) {
+                        errors++;
+                        console.error(`[DigestBuilder] Behavioral digest compiled but delivery failed for ${email}`);
+                    } else {
+                        sent++;
+                    }
                 } else {
                     skipped++;
                 }
